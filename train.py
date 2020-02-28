@@ -1,4 +1,5 @@
 import os
+os.environ["CUDA_VISIBLE_DEVICES"] = '1' 
 import sys
 import tqdm
 import random
@@ -10,6 +11,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from skimage.color import label2rgb
 plt.switch_backend('agg')
+from mpl_toolkits.axes_grid1 import make_axes_locatable
 
 import torch
 import torch.optim as optim
@@ -66,8 +68,11 @@ def test(cfg, epoch, net, test_loader, writer):
                 fig = plt.figure()
                 ax = fig.add_subplot(211)
                 ax.imshow(gt_img, 'gray')
+                ax.set_title('ground truth')
                 ax = fig.add_subplot(212)
                 ax.imshow(pre_img, 'gray')
+                ax.set_title('prediction')
+                fig.tight_layout()
                 writer.add_figure('test/prediction_results', fig, epoch)
                 fig.clear()
         
@@ -145,9 +150,17 @@ def train(cfg, epoch, net, train_loader, optimizer, loss_fn, writer):
                 ax = fig.add_subplot(211)
                 ax.imshow(gt_img, 'gray')
                 ax.set_title('ground truth')
+               
                 ax = fig.add_subplot(212)
-                ax.imshow(grid_prob[:, :, 0], 'hot')
                 ax.set_title('prediction')
+                divider = make_axes_locatable(ax)
+                ax_cb = divider.new_horizontal(size="5%", pad=0.05)
+                fig.add_axes(ax_cb)
+                im = ax.imshow(grid_prob[:, :, 0], 'jet')
+                plt.colorbar(im, cax=ax_cb)
+                ax_cb.yaxis.tick_right()
+                ax_cb.yaxis.set_tick_params(labelright=False)
+                fig.tight_layout()
                 writer.add_figure('train/prediction_results', fig, epoch)
                 fig.clear()
 
@@ -288,7 +301,7 @@ def main():
                     lr *= 0.5
         for param_group in optimizer.param_groups:
             param_group['lr'] = lr
-        writer.add_scalar('training/lr', lr, epoch)
+        writer.add_scalar('train/lr', lr, epoch)
 
         # train and evaluate 
         train(cfg, epoch, net, train_loader, optimizer, loss_fn, writer)

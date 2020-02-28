@@ -11,7 +11,7 @@ cfg.path = {}
 # datset root path 
 cfg.path.root_path = '/data/xuyangcao/code/data/roi_3d/abus_roi'
 # path to save model
-cfg.path.save = './work/test'
+cfg.path.save = './work/test-1'
 # path to save tensorboard log
 cfg.path.log_dir = './log/abus_roi'
 
@@ -38,7 +38,7 @@ cfg.training.n_epochs = 300
 cfg.training.batch_size = 2
 # gpu
 cfg.training.ngpu = 1
-cfg.training.gpu = '0'
+cfg.training.gpu = '1'
 # cross validation fold number
 cfg.training.fold = '1'
 # optimizer
