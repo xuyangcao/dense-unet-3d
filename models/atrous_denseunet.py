@@ -200,9 +200,9 @@ class AtrousDenseNet(nn.Module):
 
 
 class ADenseUnet(nn.Module):
-    def __init__(self, in_channels=1, num_classes=2):
+    def __init__(self, in_channels=1, num_classes=2, drop_rate=0.3):
         super(ADenseUnet, self).__init__()
-        features = AtrousDenseNet(in_channels, num_classes).features
+        features = AtrousDenseNet(in_channels, num_classes, drop_rate=drop_rate).features
 
         # building atrous dense unet
         self.input_block = features[:4]

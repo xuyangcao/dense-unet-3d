@@ -1,7 +1,32 @@
 import os
 import sys
-import importlib
+import torch
+import shutil
 import logging
+import importlib
+from medpy import metric
+
+def save_checkpoint(state, is_best, path, prefix, filename='checkpoing.pth.tar'):
+    prefix_save = os.path.join(path, prefix)
+    name = prefix_save + '_' + filename
+    torch.save(state, name)
+    if is_best:
+        shutil.copyfile(name, prefix_save + '_model_best.pth.tar')
+
+def get_metrics(pred, gt):
+    dice = metric.binary.dc(pred, gt)
+    jc = metric.binary.jc(pred, gt)
+    hd = metric.binary.hd(pred, gt)
+    hd95 = metric.binary.hd95(pred, gt)
+    asd = metric.binary.asd(pred, gt)
+
+    return dice, jc, hd, hd95, asd
+
+def get_dice(pred, gt):
+    dice = metric.binary.dc(pred, gt)
+
+    return dice
+
 
 def load_config(file_name):
     r"""

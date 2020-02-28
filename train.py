@@ -25,12 +25,26 @@ from torchvision.utils import make_grid
 from models.atrous_denseunet import ADenseUnet
 from models.vnet import VNet
 from dataset.abus import ABUS, RandomCrop, CenterCrop, RandomRotFlip, ToTensor, TwoStreamBatchSampler
-from utils.file_io import load_config
 from utils.losses import dice_loss
-from utils.metric import get_dice
+from utils.utils import save_checkpoint, get_dice, load_config
 
+def get_config():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('-i', '--input', default='./config/config.py')
+    parser.add_argument('--batch_size', type=int, default=2)
+    parser.add_argument('--ngpu', type=int, default=1)
 
-def test(cfg, epoch, net, test_loader, writer):
+    parser.add_argument('--fold', type=str, default='1')
+    parser.add_argument('--save', default='./work/test-1')
+
+    parser.add_argument('--arch', type=str, default='denseunet', 
+                        choices=('denseunet', 'vnet'))
+
+    args = parser.parse_args()
+    cfg = load_config(args.input)
+    return cfg, args
+
+def test(epoch, net, test_loader, writer):
     net.eval()
     mean_dice = []
     logging.info('--- testing ---')
@@ -80,7 +94,7 @@ def test(cfg, epoch, net, test_loader, writer):
         return np.mean(mean_dice)
 
 
-def train(cfg, epoch, net, train_loader, optimizer, loss_fn, writer):
+def train(args, cfg, epoch, net, train_loader, optimizer, loss_fn, writer):
     r"""
     training
 
@@ -97,7 +111,7 @@ def train(cfg, epoch, net, train_loader, optimizer, loss_fn, writer):
         None
     """
     net.train()
-    batch_size = cfg.training.ngpu * cfg.training.batch_size
+    batch_size = args.ngpu * args.batch_size
 
     loss_list = []
     dice_loss_list = []
@@ -153,13 +167,7 @@ def train(cfg, epoch, net, train_loader, optimizer, loss_fn, writer):
                
                 ax = fig.add_subplot(212)
                 ax.set_title('prediction')
-                divider = make_axes_locatable(ax)
-                ax_cb = divider.new_horizontal(size="5%", pad=0.05)
-                fig.add_axes(ax_cb)
                 im = ax.imshow(grid_prob[:, :, 0], 'jet')
-                plt.colorbar(im, cax=ax_cb)
-                ax_cb.yaxis.tick_right()
-                ax_cb.yaxis.set_tick_params(labelright=False)
                 fig.tight_layout()
                 writer.add_figure('train/prediction_results', fig, epoch)
                 fig.clear()
@@ -169,44 +177,35 @@ def train(cfg, epoch, net, train_loader, optimizer, loss_fn, writer):
     writer.add_scalar('train/total_loss', float(np.mean(loss_list)), epoch)
 
 
-def get_config():
-    parser = argparse.ArgumentParser()
-    parser.add_argument('-i', '--input', default='./config/config.py')
-    args = parser.parse_args()
-    
-    cfg = load_config(args.input)
-
-    return cfg
-
 def main():
-    cfg = get_config()
+    cfg, args = get_config()
 
     ###################
     # init parameters #
     ###################
     # creat save path 
-    if os.path.exists(cfg.path.save):
-        shutil.rmtree(cfg.path.save)
-    os.makedirs(cfg.path.save, exist_ok=True)
+    if os.path.exists(args.save):
+        shutil.rmtree(args.save)
+    os.makedirs(args.save, exist_ok=True)
     # log 
-    logging.basicConfig(filename=cfg.path.save+"/log.txt", level=logging.INFO,
+    logging.basicConfig(filename=args.save+"/log.txt", level=logging.INFO,
                         format='[%(asctime)s.%(msecs)03d] %(message)s', datefmt='%H:%M:%S')
     logging.getLogger().addHandler(logging.StreamHandler(sys.stdout))
     logging.info(str(cfg))
     logging.info('--- init parameters ---')
 
     # training data path
-    train_data_path = cfg.path.root_path
+    train_data_path = cfg.general.root_path
 
     # writer
-    idx = cfg.path.save.rfind('/')
-    log_dir = cfg.path.log_dir + cfg.path.save[idx:]
+    idx = args.save.rfind('/')
+    log_dir = cfg.general.log_dir + args.save[idx:]
     if os.path.exists(log_dir):
         shutil.rmtree(log_dir)
     writer = SummaryWriter(log_dir)
     
     # set title of the current process
-    setproctitle.setproctitle(cfg.path.save)
+    setproctitle.setproctitle(args.save)
 
     # random
     if cfg.training.deterministic:
@@ -223,15 +222,18 @@ def main():
     #####################
     logging.info('--- building network ---')
 
-    if cfg.general.arch == 'denseunet':
-        net = ADenseUnet(in_channels=cfg.general.in_channels, num_classes=cfg.general.num_classes)
-    elif cfg.general.arch == 'vnet':
-        net = VNet(n_channels=cfg.general.in_channels, n_classes=cfg.general.num_classes)
+    if args.arch == 'denseunet':
+        net = ADenseUnet(in_channels=cfg.general.in_channels, 
+                        num_classes=cfg.general.num_classes,
+                        drop_rate=cfg.training.drop_rate)
+    elif args.arch == 'vnet':
+        net = VNet(n_channels=cfg.general.in_channels, 
+                   n_classes=cfg.general.num_classes)
     else:
-        raise(RuntimeError('No module named {}'.format(cfg.general.arch)))
+        raise(RuntimeError('No module named {}'.format(args.arch)))
 
-    if cfg.training.ngpu > 1:
-        net = nn.parallel.DataParallel(net, list(range(cfg.training.ngpu)))
+    if args.ngpu > 1:
+        net = nn.parallel.DataParallel(net, list(range(args.ngpu)))
 
     n_params = sum([p.data.nelement() for p in net.parameters()])
     logging.info('total parameters = {}'.format(n_params))
@@ -253,21 +255,20 @@ def main():
         ToTensor()
         ])
     test_transform = transforms.Compose([ToTensor()])
-    train_set = ABUS(base_dir=cfg.path.root_path,
+    train_set = ABUS(base_dir=cfg.general.root_path,
                      split='train',
-                     fold=cfg.training.fold,
+                     fold=args.fold,
                      transform=train_transform
                      )
-    test_set = ABUS(base_dir=cfg.path.root_path,
+    test_set = ABUS(base_dir=cfg.general.root_path,
                     split='test',
-                    fold=cfg.testing.fold,
+                    fold=args.fold,
                     transform=test_transform
                     )
     kwargs = {'num_workers': cfg.training.num_workers, 'pin_memory': cfg.training.pin_memory}
-    batch_size = cfg.training.batch_size * cfg.training.ngpu
+    batch_size = args.batch_size * args.ngpu
     train_loader = DataLoader(train_set, batch_size=batch_size, shuffle=True, **kwargs)
-    batch_size = cfg.testing.batch_size
-    test_loader = DataLoader(test_set, batch_size=batch_size, shuffle=False, **kwargs)
+    test_loader = DataLoader(test_set, batch_size=1, shuffle=False, **kwargs)
 
 
     #####################
@@ -304,9 +305,9 @@ def main():
         writer.add_scalar('train/lr', lr, epoch)
 
         # train and evaluate 
-        train(cfg, epoch, net, train_loader, optimizer, loss_fn, writer)
+        train(args, cfg, epoch, net, train_loader, optimizer, loss_fn, writer)
         if epoch == 1 or epoch % 20 == 0:
-            dice = test(cfg, epoch, net, test_loader, writer)
+            dice = test(epoch, net, test_loader, writer)
 
             # save checkpoint
             is_best = False
@@ -317,17 +318,10 @@ def main():
                             'state_dict': net.state_dict(),
                             'best_pre':best_pre}, 
                             is_best, 
-                            cfg.path.save, 
-                            cfg.general.arch)
+                            args.save, 
+                            args.arch)
 
     writer.close()
-
-def save_checkpoint(state, is_best, path, prefix, filename='checkpoing.pth.tar'):
-    prefix_save = os.path.join(path, prefix)
-    name = prefix_save + '_' + filename
-    torch.save(state, name)
-    if is_best:
-        shutil.copyfile(name, prefix_save + '_model_best.pth.tar')
 
 if __name__ == "__main__":
     main()
