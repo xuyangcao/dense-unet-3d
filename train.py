@@ -1,13 +1,14 @@
 import os
 import sys
+import tqdm
 import random
 import shutil
 import logging
 import argparse
 import setproctitle
 import numpy as np
-from tqdm import tqdm
 import matplotlib.pyplot as plt
+from skimage.color import label2rgb
 plt.switch_backend('agg')
 
 import torch
@@ -24,9 +25,72 @@ from models.vnet import VNet
 from dataset.abus import ABUS, RandomCrop, CenterCrop, RandomRotFlip, ToTensor, TwoStreamBatchSampler
 from utils.file_io import load_config
 from utils.losses import dice_loss
+from utils.metric import get_dice
+
+
+def test(cfg, epoch, net, test_loader, writer):
+    net.eval()
+    mean_dice = []
+    logging.info('--- testing ---')
+    with torch.no_grad():
+        for i, sample in tqdm.tqdm(enumerate(test_loader)):
+            data, label = sample['image'], sample['label']
+            data, label = data.cuda(), label.cuda()
+
+            out = net(data)
+            out = F.softmax(out, dim=1)
+            out_new = out.max(1)[1]
+            dice = get_dice(out_new.cpu().numpy(), label.cpu().numpy())
+            mean_dice.append(dice)
+
+            # show results on tensorboard
+            if i % 10 == 0:
+                nrow = 5
+                image = data[0, 0:1, :, 30:71:10, :].permute(2,0,1,3)
+                image = (image + 0.5) * 0.5
+                grid_image = make_grid(image, nrow=nrow)
+                grid_image = grid_image.cpu().detach().numpy().transpose((1,2,0))
+
+                gt = label[0, :, 30:71:10, :].unsqueeze(0).permute(2,0,1,3)
+                grid_gt = make_grid(gt, nrow=nrow, normalize=False)
+                grid_gt = grid_gt.cpu().detach().numpy().transpose((1,2,0))[:, :, 0]
+                gt_img = label2rgb(grid_gt, grid_image, bg_label=0)
+
+                #outputs_soft = F.softmax(outputs, 1) #batchsize x num_classes x w x h x d
+                pre = torch.max(out, dim=1, keepdim=True)[1]
+                pre = pre[0, 0:1, :, 30:71:10, :].permute(2,0,1,3)
+                grid_pre = make_grid(pre, nrow=nrow, normalize=False)
+                grid_pre = grid_pre.cpu().detach().numpy().transpose((1,2,0))[:, :, 0]
+                pre_img = label2rgb(grid_pre, grid_image, bg_label=0)
+
+                fig = plt.figure()
+                ax = fig.add_subplot(211)
+                ax.imshow(gt_img, 'gray')
+                ax = fig.add_subplot(212)
+                ax.imshow(pre_img, 'gray')
+                writer.add_figure('test/prediction_results', fig, epoch)
+                fig.clear()
+        
+        writer.add_scalar('test/dice', float(np.mean(mean_dice)), epoch)
+        return np.mean(mean_dice)
 
 
 def train(cfg, epoch, net, train_loader, optimizer, loss_fn, writer):
+    r"""
+    training
+
+    Args:
+        cfg: config file
+        epoch: current epoch
+        net: network
+        train_loader: train loader 
+        optimizer: optimizer
+        loss_fn: loss function
+        writer: SummaryWriter
+
+    Returns:
+        None
+    """
     net.train()
     batch_size = cfg.training.ngpu * cfg.training.batch_size
 
@@ -69,7 +133,8 @@ def train(cfg, epoch, net, train_loader, optimizer, loss_fn, writer):
 
                 gt = label[0, :, 30:71:10, :].unsqueeze(0).permute(2,0,1,3)
                 grid_gt = make_grid(gt, nrow=nrow, normalize=False)
-                grid_gt = grid_gt.cpu().detach().numpy().transpose((1,2,0))
+                grid_gt = grid_gt.cpu().detach().numpy().transpose((1,2,0))[:, :, 0]
+                gt_img = label2rgb(grid_gt, grid_image, bg_label=0)
 
                 #outputs_soft = F.softmax(outputs, 1) #batchsize x num_classes x w x h x d
                 prob = outputs_soft[0, 1:2, :, 30:71:10, :].permute(2,0,1,3)
@@ -77,15 +142,12 @@ def train(cfg, epoch, net, train_loader, optimizer, loss_fn, writer):
                 grid_prob = grid_prob.cpu().detach().numpy().transpose((1,2,0))
 
                 fig = plt.figure()
-                ax = fig.add_subplot(311)
-                cs = ax.imshow(grid_image[:, :, 0], 'gray')
-                fig.colorbar(cs, ax=ax, shrink=0.9)
-                ax = fig.add_subplot(312)
-                cs = ax.imshow(grid_gt[:, :, 0], 'hot', vmin=0., vmax=1.)
-                fig.colorbar(cs, ax=ax, shrink=0.9)
-                ax = fig.add_subplot(313)
-                cs = ax.imshow(grid_prob[:, :, 0], 'hot', vmin=0, vmax=1.)
-                fig.colorbar(cs, ax=ax, shrink=0.9)
+                ax = fig.add_subplot(211)
+                ax.imshow(gt_img, 'gray')
+                ax.set_title('ground truth')
+                ax = fig.add_subplot(212)
+                ax.imshow(grid_prob[:, :, 0], 'hot')
+                ax.set_title('prediction')
                 writer.add_figure('train/prediction_results', fig, epoch)
                 fig.clear()
 
@@ -153,7 +215,7 @@ def main():
     elif cfg.general.arch == 'vnet':
         net = VNet(n_channels=cfg.general.in_channels, n_classes=cfg.general.num_classes)
     else:
-        raise(RuntimeError('No module named {}'.fomat(cfg.general.arch)))
+        raise(RuntimeError('No module named {}'.format(cfg.general.arch)))
 
     if cfg.training.ngpu > 1:
         net = nn.parallel.DataParallel(net, list(range(cfg.training.ngpu)))
@@ -162,6 +224,9 @@ def main():
     logging.info('total parameters = {}'.format(n_params))
     
     net = net.cuda()
+    # show graph
+    #x = torch.rand((1, 1, 64, 128, 128)).cuda()
+    #writer.add_graph(net, (x, ))
 
 
     #####################
@@ -227,21 +292,20 @@ def main():
 
         # train and evaluate 
         train(cfg, epoch, net, train_loader, optimizer, loss_fn, writer)
-        #dice = test(cfg, epoch, net, test_loader, writer)
-        dice = 0
+        if epoch == 1 or epoch % 20 == 0:
+            dice = test(cfg, epoch, net, test_loader, writer)
 
-        # save checkpoint
-        if epoch % 10 == 0:
+            # save checkpoint
             is_best = False
             if dice > best_pre:
                 is_best = True
                 best_pre = dice
             save_checkpoint({'epoch': epoch,
-                            'state_dict': model.state_dict(),
+                            'state_dict': net.state_dict(),
                             'best_pre':best_pre}, 
                             is_best, 
                             cfg.path.save, 
-                            cfg.training.arch)
+                            cfg.general.arch)
 
     writer.close()
 
