@@ -1,4 +1,5 @@
 import numpy as np 
+import SimpleITK as sitk
 import random
 import torch
 
@@ -12,9 +13,12 @@ class ElasticTransform(object):
 
     def __call__(self, sample):
         image, label = sample['image'], sample['label']
-        if round(np.random.uniform(0, 1), 1) <= self.probability:
+
+        prob = round(np.random.uniform(0, 1), 1) 
+        if prob < self.probability:
             num_control_points = np.random.randint(20, 32)
             image, label = self._produceRandomlyDeformedImage(image, label, num_control_points)
+            print(' --- elastic: {} --- '.format(prob))
 
         sample['image'], sample['label'] = image, label
         return sample
@@ -101,10 +105,13 @@ class RandomFlip(object):
 
     def __call__(self, sample):
         image, label = sample['image'], sample['label']
-        if round(np.random.uniform(0, 1), 1) <= self.probability:
-            idx = random.randint(0, len(self.flip_dict) - 1)
+
+        prob = round(np.random.uniform(0, 1), 1) 
+        if prob < self.probability:
+            idx = random.randint(0, 6)
             image = np.flip(image, axis=self.flip_dict[idx]).copy()
             label = np.flip(label, axis=self.flip_dict[idx]).copy()
+            print(' --- flip: {} --- '.format(prob))
 
         sample['image'], sample['label'] = image, label
         return sample

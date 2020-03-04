@@ -1,5 +1,5 @@
 import os
-os.environ["CUDA_VISIBLE_DEVICES"] = '1' 
+os.environ["CUDA_VISIBLE_DEVICES"] = '2' 
 import sys
 import tqdm
 import random
@@ -14,6 +14,7 @@ plt.switch_backend('agg')
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 
 import torch
+import torch.nn as nn
 import torch.optim as optim
 from torchvision import transforms
 import torch.nn.functional as F
@@ -23,8 +24,10 @@ from torch.utils.tensorboard import SummaryWriter
 from torchvision.utils import make_grid
 
 from models.atrous_denseunet import ADenseUnet
-from models.vnet import VNet
-from dataset.abus import ABUS, RandomCrop, CenterCrop, RandomRotFlip, ToTensor, TwoStreamBatchSampler
+#from models.vnet import VNet
+from models.vnet_o import VNet
+from dataset.abus import ABUS, RandomCrop 
+from dataset.augment import RandomFlip, ElasticTransform, ToTensor 
 from utils.losses import dice_loss
 from utils.utils import save_checkpoint, get_dice, load_config
 
@@ -35,7 +38,7 @@ def get_config():
     parser.add_argument('--ngpu', type=int, default=1)
 
     parser.add_argument('--fold', type=str, default='1')
-    parser.add_argument('--save', default='./work/test-1')
+    parser.add_argument('--save', default='./work/0304_dense_shift_aug_0.2')
 
     parser.add_argument('--arch', type=str, default='denseunet', 
                         choices=('denseunet', 'vnet'))
@@ -43,138 +46,6 @@ def get_config():
     args = parser.parse_args()
     cfg = load_config(args.input)
     return cfg, args
-
-def test(epoch, net, test_loader, writer):
-    net.eval()
-    mean_dice = []
-    logging.info('--- testing ---')
-    with torch.no_grad():
-        for i, sample in tqdm.tqdm(enumerate(test_loader)):
-            data, label = sample['image'], sample['label']
-            data, label = data.cuda(), label.cuda()
-
-            out = net(data)
-            out = F.softmax(out, dim=1)
-            out_new = out.max(1)[1]
-            dice = get_dice(out_new.cpu().numpy(), label.cpu().numpy())
-            mean_dice.append(dice)
-
-            # show results on tensorboard
-            if i % 10 == 0:
-                nrow = 5
-                image = data[0, 0:1, :, 30:71:10, :].permute(2,0,1,3)
-                image = (image + 0.5) * 0.5
-                grid_image = make_grid(image, nrow=nrow)
-                grid_image = grid_image.cpu().detach().numpy().transpose((1,2,0))
-
-                gt = label[0, :, 30:71:10, :].unsqueeze(0).permute(2,0,1,3)
-                grid_gt = make_grid(gt, nrow=nrow, normalize=False)
-                grid_gt = grid_gt.cpu().detach().numpy().transpose((1,2,0))[:, :, 0]
-                gt_img = label2rgb(grid_gt, grid_image, bg_label=0)
-
-                #outputs_soft = F.softmax(outputs, 1) #batchsize x num_classes x w x h x d
-                pre = torch.max(out, dim=1, keepdim=True)[1]
-                pre = pre[0, 0:1, :, 30:71:10, :].permute(2,0,1,3)
-                grid_pre = make_grid(pre, nrow=nrow, normalize=False)
-                grid_pre = grid_pre.cpu().detach().numpy().transpose((1,2,0))[:, :, 0]
-                pre_img = label2rgb(grid_pre, grid_image, bg_label=0)
-
-                fig = plt.figure()
-                ax = fig.add_subplot(211)
-                ax.imshow(gt_img, 'gray')
-                ax.set_title('ground truth')
-                ax = fig.add_subplot(212)
-                ax.imshow(pre_img, 'gray')
-                ax.set_title('prediction')
-                fig.tight_layout()
-                writer.add_figure('test/prediction_results', fig, epoch)
-                fig.clear()
-        
-        writer.add_scalar('test/dice', float(np.mean(mean_dice)), epoch)
-        return np.mean(mean_dice)
-
-
-def train(args, cfg, epoch, net, train_loader, optimizer, loss_fn, writer):
-    r"""
-    training
-
-    Args:
-        cfg: config file
-        epoch: current epoch
-        net: network
-        train_loader: train loader 
-        optimizer: optimizer
-        loss_fn: loss function
-        writer: SummaryWriter
-
-    Returns:
-        None
-    """
-    net.train()
-    batch_size = args.ngpu * args.batch_size
-
-    loss_list = []
-    dice_loss_list = []
-    num_processed = 0
-    num_train = len(train_loader.dataset)
-    for batch_idx, sample in enumerate(train_loader):
-        data, label = sample['image'], sample['label']
-        data, label = data.cuda(), label.cuda()
-
-        outputs = net(data)
-        outputs_soft = F.softmax(outputs, dim=1)
-
-        dice_loss = loss_fn['dice_loss'](outputs_soft[:, 1, ...], label == 1)
-        loss = dice_loss
-
-        # save losses to list
-        dice_loss_list.append(dice_loss.item())
-        loss_list.append(loss.item())
-
-        optimizer.zero_grad()
-        loss.backward()
-        optimizer.step()
-
-        # logging
-        num_processed += len(data)
-        partical_epoch = epoch + batch_idx / len(train_loader)
-        logging.info('training epoch: {:.2f}/{} [{}/{} ({:.0f}%)\t loss: {:.8f}]'.format(
-            partical_epoch, cfg.training.n_epochs, num_processed, num_train, 100. * batch_idx / len(train_loader), loss.item()))
-
-        # show images on tensorboard
-        with torch.no_grad():
-            if batch_idx % 10 == 0:
-                nrow = 5
-                image = data[0, 0:1, :, 30:71:10, :].permute(2,0,1,3)
-                image = (image + 0.5) * 0.5
-                grid_image = make_grid(image, nrow=nrow)
-                grid_image = grid_image.cpu().detach().numpy().transpose((1,2,0))
-
-                gt = label[0, :, 30:71:10, :].unsqueeze(0).permute(2,0,1,3)
-                grid_gt = make_grid(gt, nrow=nrow, normalize=False)
-                grid_gt = grid_gt.cpu().detach().numpy().transpose((1,2,0))[:, :, 0]
-                gt_img = label2rgb(grid_gt, grid_image, bg_label=0)
-
-                #outputs_soft = F.softmax(outputs, 1) #batchsize x num_classes x w x h x d
-                prob = outputs_soft[0, 1:2, :, 30:71:10, :].permute(2,0,1,3)
-                grid_prob = make_grid(prob, nrow=nrow, normalize=False)
-                grid_prob = grid_prob.cpu().detach().numpy().transpose((1,2,0))
-
-                fig = plt.figure()
-                ax = fig.add_subplot(211)
-                ax.imshow(gt_img, 'gray')
-                ax.set_title('ground truth')
-               
-                ax = fig.add_subplot(212)
-                ax.set_title('prediction')
-                im = ax.imshow(grid_prob[:, :, 0], 'jet')
-                fig.tight_layout()
-                writer.add_figure('train/prediction_results', fig, epoch)
-                fig.clear()
-
-    # show scalars on tensorboard
-    writer.add_scalar('train/dice_loss', float(np.mean(dice_loss_list)), epoch)
-    writer.add_scalar('train/total_loss', float(np.mean(loss_list)), epoch)
 
 
 def main():
@@ -192,6 +63,7 @@ def main():
                         format='[%(asctime)s.%(msecs)03d] %(message)s', datefmt='%H:%M:%S')
     logging.getLogger().addHandler(logging.StreamHandler(sys.stdout))
     logging.info(str(cfg))
+    logging.info(str(args))
     logging.info('--- init parameters ---')
 
     # training data path
@@ -250,8 +122,9 @@ def main():
     logging.info('--- loading dataset ---')
 
     train_transform = transforms.Compose([
-        RandomRotFlip(),
-        RandomCrop(cfg.general.crop_size),
+        RandomFlip(probability=0.2),
+        ElasticTransform(probability=0.2),
+        #RandomCrop(output_size=cfg.general.crop_size),
         ToTensor()
         ])
     test_transform = transforms.Compose([ToTensor()])
@@ -306,7 +179,7 @@ def main():
 
         # train and evaluate 
         train(args, cfg, epoch, net, train_loader, optimizer, loss_fn, writer)
-        if epoch == 1 or epoch % 20 == 0:
+        if epoch == 1 or epoch % 10 == 0:
             dice = test(epoch, net, test_loader, writer)
 
             # save checkpoint
@@ -322,6 +195,144 @@ def main():
                             args.arch)
 
     writer.close()
+
+
+def test(epoch, net, test_loader, writer):
+    net.eval()
+    mean_dice = []
+    logging.info('--- testing ---')
+    with torch.no_grad():
+        for i, sample in tqdm.tqdm(enumerate(test_loader)):
+            data, label = sample['image'], sample['label']
+            data, label = data.cuda(), label.cuda()
+
+            out = net(data)
+            out = F.softmax(out, dim=1)
+            out_new = out.max(1)[1]
+            dice = get_dice(out_new.cpu().numpy(), label.cpu().numpy())
+            mean_dice.append(dice)
+
+            # show results on tensorboard
+            if i % 10 == 0:
+                nrow = 6
+                image = data[0, 0:1, :, 5:61:10, :].permute(2,0,1,3)
+                image = (image + 0.5) * 0.5
+                grid_image = make_grid(image, nrow=nrow)
+                grid_image = grid_image.cpu().detach().numpy().transpose((1,2,0))
+
+                gt = label[0, :, 5:61:10, :].unsqueeze(0).permute(2,0,1,3)
+                grid_gt = make_grid(gt, nrow=nrow, normalize=False)
+                grid_gt = grid_gt.cpu().detach().numpy().transpose((1,2,0))[:, :, 0]
+                gt_img = label2rgb(grid_gt, grid_image, bg_label=0)
+
+                #outputs_soft = F.softmax(outputs, 1) #batchsize x num_classes x w x h x d
+                pre = torch.max(out, dim=1, keepdim=True)[1]
+                pre = pre[0, 0:1, :, 5:61:10, :].permute(2,0,1,3)
+                grid_pre = make_grid(pre, nrow=nrow, normalize=False)
+                grid_pre = grid_pre.cpu().detach().numpy().transpose((1,2,0))[:, :, 0]
+                pre_img = label2rgb(grid_pre, grid_image, bg_label=0)
+
+                fig = plt.figure()
+                ax = fig.add_subplot(211)
+                ax.imshow(gt_img, 'gray')
+                ax.set_title('ground truth')
+                ax = fig.add_subplot(212)
+                ax.imshow(pre_img, 'gray')
+                ax.set_title('prediction')
+                fig.tight_layout()
+                writer.add_figure('test/prediction_results', fig, epoch)
+                fig.clear()
+        
+        writer.add_scalar('test/dice', float(np.mean(mean_dice)), epoch)
+        return np.mean(mean_dice)
+
+
+def train(args, cfg, epoch, net, train_loader, optimizer, loss_fn, writer):
+    r"""
+    training
+
+    Args:
+        cfg: config file
+        epoch: current epoch
+        net: network
+        train_loader: train loader 
+        optimizer: optimizer
+        loss_fn: loss function
+        writer: SummaryWriter
+
+    Returns:
+        None
+    """
+    net.train()
+    batch_size = args.ngpu * args.batch_size
+
+    loss_list = []
+    dice_loss_list = []
+    num_processed = 0
+    num_train = len(train_loader.dataset)
+    for batch_idx, sample in enumerate(train_loader):
+        data, label = sample['image'], sample['label']
+        data, label = data.cuda(), label.cuda()
+        #print(data.shape)
+
+        outputs = net(data)
+        outputs_soft = F.softmax(outputs, dim=1)
+
+        dice_loss = loss_fn['dice_loss'](outputs_soft[:, 1, ...], label == 1)
+        loss = dice_loss
+
+        # save losses to list
+        dice_loss_list.append(dice_loss.item())
+        loss_list.append(loss.item())
+
+        optimizer.zero_grad()
+        loss.backward()
+        optimizer.step()
+
+        # logging
+        num_processed += len(data)
+        partical_epoch = epoch + batch_idx / len(train_loader)
+        logging.info('training epoch: {:.2f}/{} [{}/{} ({:.0f}%)\t loss: {:.8f}]'.format(
+            partical_epoch, cfg.training.n_epochs, num_processed, num_train, 100. * batch_idx / len(train_loader), loss.item()))
+
+        # show images on tensorboard
+        with torch.no_grad():
+            if batch_idx % 10 == 0:
+                nrow = 6
+                start, end, step = 5, 61, 5 
+
+                image = data[0, 0:1, :, start:end:step, :].permute(2,0,1,3)
+                image = (image + 0.5) * 0.5
+                grid_image = make_grid(image, nrow=nrow)
+                grid_image = grid_image.cpu().detach().numpy().transpose((1,2,0))
+
+                gt = label[0, :, start:end:step, :].unsqueeze(0).permute(2,0,1,3)
+                grid_gt = make_grid(gt, nrow=nrow, normalize=False)
+                grid_gt = grid_gt.cpu().detach().numpy().transpose((1,2,0))[:, :, 0]
+                gt_img = label2rgb(grid_gt, grid_image, bg_label=0)
+
+                #outputs_soft = F.softmax(outputs, 1) #batchsize x num_classes x w x h x d
+                prob = outputs_soft[0, 1:2, :, start:end:step, :].permute(2,0,1,3)
+                grid_prob = make_grid(prob, nrow=nrow, normalize=False)
+                grid_prob = grid_prob.cpu().detach().numpy().transpose((1,2,0))
+
+                fig = plt.figure()
+                ax = fig.add_subplot(211)
+                ax.imshow(gt_img, 'gray')
+                ax.set_title('ground truth')
+               
+                ax = fig.add_subplot(212)
+                ax.set_title('prediction')
+                im = ax.imshow(grid_prob[:, :, 0], 'jet')
+                fig.tight_layout()
+                writer.add_figure('train/prediction_results', fig, epoch)
+                fig.clear()
+
+    # show scalars on tensorboard
+    writer.add_scalar('train/dice_loss', float(np.mean(dice_loss_list)), epoch)
+    writer.add_scalar('train/total_loss', float(np.mean(loss_list)), epoch)
+
+
 
 if __name__ == "__main__":
     main()

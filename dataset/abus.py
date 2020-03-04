@@ -159,57 +159,6 @@ class RandomCrop(object):
         return sample 
 
 
-class RandomRotFlip(object):
-    """
-    Crop randomly flip the dataset in a sample
-    Args:
-    output_size (int): Desired output size
-    """
-    def __init__(self, probability=0.6, use_dismap=False):
-        self.probability = probability
-        self.use_dismap = use_dismap
-
-    def __call__(self, sample):
-        image, label = sample['image'], sample['label']
-        if self.use_dismap:
-            dis_map = sample['dis_map']
-
-        if round(np.random.uniform(0,1),1) <= self.probability:
-            k = random.choices([2,4],k=1)
-            k = k[0]
-            image = np.rot90(image, k)
-            label = np.rot90(label, k)
-            #print('rot90.shape', image.shape)
-            if self.use_dismap:
-                dis_map = np.rot90(dis_map, k)
-
-            axis = np.random.randint(0, 2)
-            image = np.flip(image, axis=axis).copy()
-            label = np.flip(label, axis=axis).copy()
-            #print('flip.shape', image.shape)
-            if self.use_dismap:
-                dis_map = np.flip(dis_map, axis=axis).copy()
-
-            sample['image'], sample['label'] = image, label
-            if self.use_dismap:
-                sample['dis_map'] = dis_map
-
-        return sample 
-
-
-class RandomNoise(object):
-    def __init__(self, mu=0, sigma=0.1):
-        self.mu = mu
-        self.sigma = sigma
-
-    def __call__(self, sample):
-        image, label = sample['image'], sample['label']
-        noise = np.clip(self.sigma * np.random.randn(image.shape[0], image.shape[1], image.shape[2]), -2*self.sigma, 2*self.sigma)
-        noise = noise + self.mu
-        image = image + noise
-        return {'image': image, 'label': label}
-
-
 class CreateOnehotLabel(object):
     def __init__(self, num_classes):
         self.num_classes = num_classes
@@ -222,23 +171,6 @@ class CreateOnehotLabel(object):
         return {'image': image, 'label': label,'onehot_label':onehot_label}
 
 
-class ToTensor(object):
-    """Convert ndarrays in sample to Tensors."""
-    def __init__(self, use_dismap=False):
-        self.use_dismap = use_dismap
-
-    def __call__(self, sample):
-        image, label = sample['image'], sample['label']
-        image = image.reshape(1, image.shape[0], image.shape[1], image.shape[2]).astype(np.float32)
-        sample['image'] = torch.from_numpy(image)
-        sample['label'] = torch.from_numpy(label).long()
-        if self.use_dismap:
-            dis_map = sample['dis_map']
-            dis_map = np.expand_dims(dis_map, 0)
-            #print('dis_map.shape: ', dis_map.shape)
-            sample['dis_map'] = torch.from_numpy(dis_map.astype(np.float32))
-
-        return sample
 
 
 class TwoStreamBatchSampler(Sampler):
