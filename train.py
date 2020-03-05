@@ -1,5 +1,5 @@
 import os
-os.environ["CUDA_VISIBLE_DEVICES"] = '0' 
+os.environ["CUDA_VISIBLE_DEVICES"] = '1' 
 import sys
 import tqdm
 import random
@@ -46,8 +46,8 @@ def get_config():
     # frequently changed params 
     parser.add_argument('--fold', type=str, default='1')
     parser.add_argument('--arch', type=str, default='denseunet', choices=('denseunet', 'vnet'))
-    parser.add_argument('--log_dir', type=str, default='./log/dense_unet')
-    parser.add_argument('--save', default='./work/dense_unet/test')
+    parser.add_argument('--log_dir', type=str, default='./log/0305_archs')
+    parser.add_argument('--save', default='./work/0305_archs/test')
 
     args = parser.parse_args()
     cfg = load_config(args.input)
@@ -64,12 +64,17 @@ def main():
     if os.path.exists(args.save):
         shutil.rmtree(args.save)
     os.makedirs(args.save, exist_ok=True)
+    # save current network file
+    shutil.copy('./models/atrous_denseunet.py', args.save)
+    shutil.copy('./train.py', args.save)
+
     # log 
     logging.basicConfig(filename=args.save+"/log.txt", level=logging.INFO,
                         format='[%(asctime)s.%(msecs)03d] %(message)s', datefmt='%H:%M:%S')
     logging.getLogger().addHandler(logging.StreamHandler(sys.stdout))
     logging.info(str(cfg))
     logging.info(str(args))
+    logging.info('--- copied model into {} ---'.format(args.save))
     logging.info('--- init parameters ---')
 
     # training data path
