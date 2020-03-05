@@ -1,5 +1,5 @@
 import os
-os.environ["CUDA_VISIBLE_DEVICES"] = '1' 
+os.environ["CUDA_VISIBLE_DEVICES"] = '3' 
 import argparse
 import shutil
 import tqdm
@@ -7,6 +7,7 @@ import setproctitle
 import nibabel as nib
 import SimpleITK as sitk
 import numpy as np
+import pandas as pd
 
 import torch
 from torchvision import transforms
@@ -14,21 +15,25 @@ from torch.utils.data import DataLoader
 
 from models.atrous_denseunet import ADenseUnet
 from models.vnet_o import VNet
-from dataset.abus import ABUS, RandomCrop, CenterCrop, RandomRotFlip, ToTensor, TwoStreamBatchSampler
-from utils.utils import get_dice, load_config
+from dataset.abus import ABUS
+from dataset.augment import ToTensor
+from utils.utils import load_config, get_metrics
 
 def get_args():    
     parser = argparse.ArgumentParser()
     parser.add_argument('-i', '--input', default='./config/config.py')
-    parser.add_argument('--gpu', default='2', type=str)
+    # path
+    parser.add_argument('--root_path', type=str, default='/data/xuyangcao/code/data/roi_3d/abus_shift')
+    # gpu
     parser.add_argument('--ngpu', type=int, default=1)
+    # evaluate
+    #parser.add_argument('-e', '--evaluate', action='store_true', default=False)
+
+    # frequently changed params
     parser.add_argument('--fold', type=str, default='1')
-    parser.add_argument('--arch', type=str, default='denseunet', 
-                        choices=('denseunet', 'vnet'))
-
-    parser.add_argument('--save')
-    parser.add_argument('--resume', type=str, metavar='PATH')
-
+    parser.add_argument('--arch', type=str, default='denseunet', choices=('denseunet', 'vnet'))
+    parser.add_argument('--resume', type=str)
+    parser.add_argument('--save', type=str)
 
     args = parser.parse_args()
     cfg = load_config(args.input)
@@ -37,7 +42,13 @@ def get_args():
 
 def test(args, test_loader, net, save_result=True):
     net.eval()
-    mean_dice = []
+
+    dsc_list = []
+    jc_list = []
+    hd_list = []
+    hd95_list = []
+    asd_list = []
+    filename_list = []
     with torch.no_grad():
         for sample in tqdm.tqdm(test_loader):
             image, label = sample['image'], sample['label']
@@ -55,11 +66,19 @@ def test(args, test_loader, net, save_result=True):
             label = label.astype(np.float)
             pred = pred[0].cpu().numpy()
             pred = pred.astype(np.float)
-            dice = get_dice(pred, label)
-            mean_dice.append(dice)
+
+            # get metrics
+            metrics = get_metrics(pred, label, voxelspacing=(0.5, 0.5, 0.5)) 
+            dsc_list.append(metrics['dsc'])
+            jc_list.append(metrics['jc'])
+            hd_list.append(metrics['hd'])
+            hd95_list.append(metrics['hd95'])
+            asd_list.append(metrics['asd'])
+            filename_list.append(case_name)
+
 
             if save_result:
-                save_name = os.path.join(args.save, case_name[0][:-4])
+                save_name = os.path.join(args.save_path, case_name[0][:-4])
                 if not os.path.exists(save_name):
                     os.makedirs(save_name)
 
@@ -72,17 +91,47 @@ def test(args, test_loader, net, save_result=True):
                 img = sitk.GetImageFromArray(pred)
                 sitk.WriteImage(img, save_name + '/' + "pred.nii.gz")
 
-        return np.mean(mean_dice)
+        df = pd.DataFrame()
+        df['name'] = filename_list 
+        df['dsc'] = np.array(dsc_list)
+        df['jc'] = np.array(jc_list) 
+        df['hd'] = np.array(hd_list) 
+        df['hd95'] = np.array(hd95_list) 
+        df['asd'] = np.array(asd_list) 
+        print(df.describe())
+        df.to_csv(args.csv_file_name)
+
 
 def main():
 
     # --- init args ---
     cfg, args = get_args()
+    
+    # --- saving path ---
+    if 'best' in args.resume:
+        file_name = 'model_best_result'
+    elif 'check' in args.resume:
+        file_name = 'checkpoint_result'
+    else:
+        raise(RuntimeError('Error in args.resume'))
+    csv_file_name = file_name + '.csv'
 
-    if os.path.exists(args.save):
-        shutil.rmtree(args.save)
-    os.makedirs(args.save, exist_ok=True)
-    setproctitle.setproctitle(args.save)
+    if args.save is not None:
+        save_path = os.path.join(args.save, file_name) 
+        csv_path = os.save
+    else:
+        save_path = os.path.join(os.path.dirname(args.resume), file_name)
+        csv_path = os.path.dirname(args.resume)
+    args.save_path = save_path
+    args.csv_file_name = os.path.join(csv_path, csv_file_name) 
+    print('=> saving images in :', args.save_path)
+    print('=> saving csv in :', args.csv_file_name)
+
+
+    if os.path.exists(args.save_path):
+        shutil.rmtree(args.save_path)
+    os.makedirs(args.save_path, exist_ok=True)
+    setproctitle.setproctitle(args.save_path)
 
 
     # --- building network ---
@@ -116,7 +165,7 @@ def main():
 
     # --- preparing dataset
     test_transform = transforms.Compose([ToTensor()])
-    test_set = ABUS(base_dir=cfg.general.root_path,
+    test_set = ABUS(base_dir=args.root_path,
                     split='test',
                     fold=args.fold,
                     transform=test_transform
@@ -126,8 +175,7 @@ def main():
 
 
     # --- testing ---
-    dice = test(args, test_loader, net)
-    print('average dice is {}'.format(dice))
+    test(args, test_loader, net)
 
 if __name__ == "__main__":
     main()

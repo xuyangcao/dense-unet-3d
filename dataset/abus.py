@@ -31,7 +31,7 @@ class ABUS(Dataset):
         self.image_list = [item.replace('\n','') for item in self.image_list]
         if num is not None:
             self.image_list = self.image_list[:num]
-        print("total {} samples".format(len(self.image_list)))
+        print("--- total {} samples ---".format(len(self.image_list)))
 
     def __len__(self):
         return len(self.image_list)

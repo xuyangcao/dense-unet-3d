@@ -18,7 +18,7 @@ class ElasticTransform(object):
         if prob < self.probability:
             num_control_points = np.random.randint(20, 32)
             image, label = self._produceRandomlyDeformedImage(image, label, num_control_points)
-            print(' --- elastic: {} --- '.format(prob))
+            print('--- elastic: {} ---'.format(prob))
 
         sample['image'], sample['label'] = image, label
         return sample
@@ -111,7 +111,7 @@ class RandomFlip(object):
             idx = random.randint(0, 6)
             image = np.flip(image, axis=self.flip_dict[idx]).copy()
             label = np.flip(label, axis=self.flip_dict[idx]).copy()
-            print(' --- flip: {} --- '.format(prob))
+            print('--- flip: {} ---'.format(prob))
 
         sample['image'], sample['label'] = image, label
         return sample

@@ -10,23 +10,15 @@ cfg.general = {}
 cfg.general.in_channels = 1
 cfg.general.num_classes = 2
 cfg.general.crop_size = [128, 64, 128]
-# datset root path 
-cfg.general.root_path = '/data/xuyangcao/code/data/roi_3d/abus_shift'
-# path to save tensorboard log
-cfg.general.log_dir = './log/abus_roi'
-
 
 #######################
 # training parameters #
 #######################
 cfg.training = {}
-# epoch 
-cfg.training.start_epoch = 1
-cfg.training.n_epochs = 300 
 # optimizer
 cfg.training.opt = 'adam'
 cfg.training.weight_decay = 1e-5
-cfg.training.lr = 1e-4
+cfg.training.lr = 1e-3
 cfg.training.drop_rate = 0.0
 # random flag 
 cfg.training.deterministic = True 

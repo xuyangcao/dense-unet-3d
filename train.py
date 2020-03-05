@@ -1,5 +1,5 @@
 import os
-os.environ["CUDA_VISIBLE_DEVICES"] = '2' 
+os.environ["CUDA_VISIBLE_DEVICES"] = '0' 
 import sys
 import tqdm
 import random
@@ -34,14 +34,20 @@ from utils.utils import save_checkpoint, get_dice, load_config
 def get_config():
     parser = argparse.ArgumentParser()
     parser.add_argument('-i', '--input', default='./config/config.py')
-    parser.add_argument('--batch_size', type=int, default=2)
+    # path
+    parser.add_argument('--root_path', type=str, default='/data/xuyangcao/code/data/roi_3d/abus_shift')
+    # batch 
     parser.add_argument('--ngpu', type=int, default=1)
+    parser.add_argument('--batch_size', type=int, default=2)
+    # epoch
+    parser.add_argument('--start_epoch', type=int, default=1)
+    parser.add_argument('--n_epochs', type=int, default=300)
 
+    # frequently changed params 
     parser.add_argument('--fold', type=str, default='1')
-    parser.add_argument('--save', default='./work/0304_dense_shift_aug_0.2')
-
-    parser.add_argument('--arch', type=str, default='denseunet', 
-                        choices=('denseunet', 'vnet'))
+    parser.add_argument('--arch', type=str, default='denseunet', choices=('denseunet', 'vnet'))
+    parser.add_argument('--log_dir', type=str, default='./log/dense_unet')
+    parser.add_argument('--save', default='./work/dense_unet/test')
 
     args = parser.parse_args()
     cfg = load_config(args.input)
@@ -67,11 +73,11 @@ def main():
     logging.info('--- init parameters ---')
 
     # training data path
-    train_data_path = cfg.general.root_path
+    train_data_path = args.root_path
 
     # writer
     idx = args.save.rfind('/')
-    log_dir = cfg.general.log_dir + args.save[idx:]
+    log_dir = args.log_dir + args.save[idx:]
     if os.path.exists(log_dir):
         shutil.rmtree(log_dir)
     writer = SummaryWriter(log_dir)
@@ -108,7 +114,7 @@ def main():
         net = nn.parallel.DataParallel(net, list(range(args.ngpu)))
 
     n_params = sum([p.data.nelement() for p in net.parameters()])
-    logging.info('total parameters = {}'.format(n_params))
+    logging.info('--- total parameters = {} ---'.format(n_params))
     
     net = net.cuda()
     # show graph
@@ -128,12 +134,12 @@ def main():
         ToTensor()
         ])
     test_transform = transforms.Compose([ToTensor()])
-    train_set = ABUS(base_dir=cfg.general.root_path,
+    train_set = ABUS(base_dir=args.root_path,
                      split='train',
                      fold=args.fold,
                      transform=train_transform
                      )
-    test_set = ABUS(base_dir=cfg.general.root_path,
+    test_set = ABUS(base_dir=args.root_path,
                     split='test',
                     fold=args.fold,
                     transform=test_transform
@@ -165,7 +171,7 @@ def main():
     logging.info('--- start training ---')
 
     best_pre = 0.
-    for epoch in range(cfg.training.start_epoch, cfg.training.n_epochs + 1):
+    for epoch in range(args.start_epoch, args.n_epochs + 1):
         # update lr
         if cfg.training.opt == 'adam':
             if epoch % 30 == 0:
@@ -293,7 +299,7 @@ def train(args, cfg, epoch, net, train_loader, optimizer, loss_fn, writer):
         num_processed += len(data)
         partical_epoch = epoch + batch_idx / len(train_loader)
         logging.info('training epoch: {:.2f}/{} [{}/{} ({:.0f}%)\t loss: {:.8f}]'.format(
-            partical_epoch, cfg.training.n_epochs, num_processed, num_train, 100. * batch_idx / len(train_loader), loss.item()))
+            partical_epoch, args.n_epochs, num_processed, num_train, 100. * batch_idx / len(train_loader), loss.item()))
 
         # show images on tensorboard
         with torch.no_grad():

@@ -5,22 +5,56 @@ import shutil
 import logging
 import importlib
 from medpy import metric
+import numpy as np
 
-def save_checkpoint(state, is_best, path, prefix, filename='checkpoing.pth.tar'):
+def save_checkpoint(state, is_best, path, prefix, filename='checkpoint.pth.tar'):
     prefix_save = os.path.join(path, prefix)
     name = prefix_save + '_' + filename
     torch.save(state, name)
     if is_best:
         shutil.copyfile(name, prefix_save + '_model_best.pth.tar')
 
-def get_metrics(pred, gt):
-    dice = metric.binary.dc(pred, gt)
-    jc = metric.binary.jc(pred, gt)
-    hd = metric.binary.hd(pred, gt)
-    hd95 = metric.binary.hd95(pred, gt)
-    asd = metric.binary.asd(pred, gt)
+def get_metrics(pred, gt, voxelspacing=(0.5, 0.5, 0.5)):
+    r""" 
+    Get statistic metrics of segmentation
 
-    return dice, jc, hd, hd95, asd
+    These metrics include: Dice, Jaccard, Hausdorff Distance, 95% Hausdorff Distance, 
+    and Average surface distance(ASD) metric.
+
+    If the prediction result is 0s, we set hd, hd95, asd 10.0 to avoid errors.
+
+    Parameters:
+    -----------
+    pred: 3D numpy ndarray
+        binary prediction results 
+
+    gt: 3D numpy ndarray
+        binary ground truth
+
+    voxelspacing: tuple of 3 floats. default: (0.5, 0.5, 0.5)
+        voxel space of 3D image
+
+    Returns:
+    --------
+    metrics: dict of 5 metrics 
+        dict{dsc, jc, hd, hd95, asd}
+    """
+
+    dsc = metric.binary.dc(pred, gt)
+    jc = metric.binary.jc(pred, gt)
+
+    if np.sum(pred) == 0:
+        print('=> prediction is 0s! ')
+        hd = 10.
+        hd95 = 10.
+        asd = 10.
+    else:
+        hd = metric.binary.hd(pred, gt, voxelspacing=voxelspacing)
+        hd95 = metric.binary.hd95(pred, gt, voxelspacing=voxelspacing)
+        asd = metric.binary.asd(pred, gt, voxelspacing=voxelspacing)
+
+    metrics = {'dsc': dsc, 'jc': jc, 'hd': hd, 'hd95': hd95, 'asd': asd} 
+    return metrics 
 
 def get_dice(pred, gt):
     dice = metric.binary.dc(pred, gt)
