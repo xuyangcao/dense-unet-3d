@@ -1,5 +1,5 @@
 import os
-os.environ["CUDA_VISIBLE_DEVICES"] = '1' 
+os.environ["CUDA_VISIBLE_DEVICES"] = '3' 
 import sys
 import tqdm
 import random
@@ -20,7 +20,8 @@ from torchvision import transforms
 import torch.nn.functional as F
 import torch.backends.cudnn as cudnn
 from torch.utils.data import DataLoader
-from torch.utils.tensorboard import SummaryWriter
+#from torch.utils.tensorboard import SummaryWriter
+from tensorboardX import SummaryWriter
 from torchvision.utils import make_grid
 
 from models.atrous_denseunet import ADenseUnet
@@ -47,7 +48,7 @@ def get_config():
     parser.add_argument('--fold', type=str, default='1')
     parser.add_argument('--arch', type=str, default='denseunet', choices=('denseunet', 'vnet'))
     parser.add_argument('--log_dir', type=str, default='./log/0305_archs')
-    parser.add_argument('--save', default='./work/0305_archs/test')
+    parser.add_argument('--save', default='./work/0305_archs/dunet_125_skip')
 
     args = parser.parse_args()
     cfg = load_config(args.input)

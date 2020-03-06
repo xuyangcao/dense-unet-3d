@@ -37,17 +37,20 @@ class _DenseLayer(nn.Module):
 
 class _DenseBlock(nn.ModuleDict):
     def __init__(self, num_layers, num_input_features, bn_size, growth_rate, 
-                drop_rate, output_stride, use_dilation=False):
+                drop_rate, output_stride, use_dilation=True):
         super(_DenseBlock, self).__init__()
         if output_stride == 2:
-            dilations = [1, 1, 1, 1, 1, 1]
+            #dilations = [1, 1, 1, 1, 1, 1]
             #dilations = [1, 1, 1, 6, 12, 18]
+            dilations = [1, 2, 5, 1, 2, 5]
         elif output_stride == 4:
+            #dilations = [1, 1, 1, 1, 1, 1]
             #dilations = [1, 1, 1, 3, 6, 9]
-            dilations = [1, 1, 1, 1, 1, 1]
+            dilations = [1, 2, 5, 1, 2, 5]
         else:
+            #dilations = [1, 1, 1, 1, 1, 1]
             #dilations = [1, 1, 1, 2, 3, 5]
-            dilations = [1, 1, 1, 1, 1, 1]
+            dilations = [1, 2, 5, 1, 2, 5]
 
 
         if use_dilation:
@@ -124,6 +127,8 @@ class UpSampleBlock(nn.Module):
         #x = self.up(x, scale_factor=self.scale_factor, mode='trilinear', align_corners=True)
         x = self.up(x, scale_factor=self.scale_factor, mode='nearest')
         if out is not None:
+            #print('out.shape: ', out.shape)
+            #print('x.shape: ', x.shape)
             x = torch.cat([x, out], 1)
         x = self.relu(self.bn(self.conv(x)))
 
@@ -200,8 +205,9 @@ class AtrousDenseNet(nn.Module):
 
 
 class ADenseUnet(nn.Module):
-    def __init__(self, in_channels=1, num_classes=2, drop_rate=0.3):
+    def __init__(self, in_channels=1, num_classes=2, drop_rate=0.3, skip_connetcion=True):
         super(ADenseUnet, self).__init__()
+        self.skip_connetcion = skip_connetcion
         features = AtrousDenseNet(in_channels, num_classes, drop_rate=drop_rate).features
 
         # building atrous dense unet
@@ -216,8 +222,12 @@ class ADenseUnet(nn.Module):
         self.transition_block_4 = features[11]
 
         self.up_1 = UpSampleBlock(32, 16, scale_factor=(1, 2, 2)) 
-        self.up_2 = UpSampleBlock(64, 32)
-        self.up_3 = UpSampleBlock(143, 64)
+        if skip_connetcion:
+            self.up_2 = UpSampleBlock(64 + 136, 32)
+            self.up_3 = UpSampleBlock(143 + 140, 64)
+        else:
+            self.up_2 = UpSampleBlock(64, 32)
+            self.up_3 = UpSampleBlock(143, 64)
 
         self.output_block = nn.Conv3d(16, num_classes, kernel_size=1, stride=1, padding=0, bias=False)
 
@@ -234,16 +244,15 @@ class ADenseUnet(nn.Module):
         #print('x_16.shape', x_16.shape)
         x_8 = self.transition_block_3(x_16)
         x_8 = self.dense_block_4(x_8)
+        #print('x_8.shape', x_8.shape)
         out = self.transition_block_4(x_8)
         #print('out.shape', out.shape)
-        #out = self.up_4(out)
-        #print('up_4.shape', out.shape)
-        out = self.up_3(out)
-        #print('up_3.shape', out.shape)
-        out = self.up_2(out)
-        #print('up_2.shape', out.shape)
+        if self.skip_connetcion:
+            out = self.up_3(out, x_32)
+            out = self.up_2(out, x_64)
+        else:
+            out = self.up_3(out)
+            out = self.up_2(out)
         out = self.up_1(out)
-        #print('up_1.shape', out.shape)
         out = self.output_block(out)
-        #print('out.shape', out.shape)
         return out
