@@ -15,7 +15,8 @@ class _DenseLayer(nn.Module):
         self.add_module('norm2', nn.BatchNorm3d(bn_size * growth_rate))
         self.add_module('relu2', nn.ReLU(inplace=True))
         self.add_module('conv2', nn.Conv3d(bn_size * growth_rate, growth_rate, 
-                                            kernel_size=3, stride=1, padding=padding, 
+                                            #kernel_size=3, stride=1, padding=padding, 
+                                            kernel_size=5, stride=1, padding=2*padding, 
                                             dilation=dilation, bias=False))
         self.drop_rate = float(drop_rate)
 
@@ -111,7 +112,8 @@ class UpSampleBlock(nn.Module):
         super(UpSampleBlock, self).__init__()
         self.scale_factor = scale_factor
         self.up = nn.functional.interpolate
-        self.conv = nn.Conv3d(in_planes, out_planes, kernel_size=3, stride=1, padding=1, bias=False)
+        #self.conv = nn.Conv3d(in_planes, out_planes, kernel_size=3, stride=1, padding=1, bias=False)
+        self.conv = nn.Conv3d(in_planes, out_planes, kernel_size=5, stride=1, padding=2, bias=False)
         self.bn = nn.BatchNorm3d(out_planes)
         self.relu = nn.ReLU(inplace=True)
 
@@ -148,7 +150,7 @@ class AtrousDenseNet(nn.Module):
     dilations (list of 6 ints): atrous rate in atrous convolution 
     """
 
-    def __init__(self, in_planes=1, out_planes=2, growth_rate=12, block_config=(6, 6, 6, 6), num_init_features=64, bn_size=4, drop_rate=0., use_dilation=True):
+    def __init__(self, in_planes=1, out_planes=2, growth_rate=6, block_config=(6, 6, 6, 6), num_init_features=16, bn_size=2, drop_rate=0., use_dilation=True):
         super(AtrousDenseNet, self).__init__()
 
         # Input convolution 
@@ -223,11 +225,11 @@ class ADenseUnet(nn.Module):
 
         self.up_1 = UpSampleBlock(32, 16, scale_factor=(1, 2, 2)) 
         if skip_connetcion:
-            self.up_2 = UpSampleBlock(64 + 136, 32)
-            self.up_3 = UpSampleBlock(143 + 140, 64)
+            self.up_2 = UpSampleBlock(64 + 52, 32)
+            self.up_3 = UpSampleBlock(69 + 62, 64)
         else:
             self.up_2 = UpSampleBlock(64, 32)
-            self.up_3 = UpSampleBlock(143, 64)
+            self.up_3 = UpSampleBlock(69, 64)
 
         self.output_block = nn.Conv3d(16, num_classes, kernel_size=1, stride=1, padding=0, bias=False)
 
