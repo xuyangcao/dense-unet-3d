@@ -27,6 +27,7 @@ from torchvision.utils import make_grid
 from models.atrous_denseunet import ADenseUnet
 #from models.vnet import VNet
 from models.vnet_o import VNet
+from unet import UNet3D
 from dataset.abus import ABUS, RandomCrop 
 from dataset.augment import RandomFlip, ElasticTransform, ToTensor 
 from utils.losses import dice_loss
@@ -45,10 +46,10 @@ def get_config():
     parser.add_argument('--n_epochs', type=int, default=300)
 
     # frequently changed params 
-    parser.add_argument('--fold', type=str, default='1')
-    parser.add_argument('--arch', type=str, default='denseunet', choices=('denseunet', 'vnet'))
+    parser.add_argument('--fold', type=str, default='0')
+    parser.add_argument('--arch', type=str, default='denseunet', choices=('denseunet', 'vnet', 'unet3d'))
     parser.add_argument('--log_dir', type=str, default='./log/0305_archs')
-    parser.add_argument('--save', default='./work/0305_archs/dunet_125_skip')
+    parser.add_argument('--save', default='./work/0305_archs/dunet_123_fold_0')
 
     args = parser.parse_args()
     cfg = load_config(args.input)
@@ -110,6 +111,9 @@ def main():
         net = ADenseUnet(in_channels=cfg.general.in_channels, 
                         num_classes=cfg.general.num_classes,
                         drop_rate=cfg.training.drop_rate)
+    elif args.arch == 'unet3d':
+        #net = UNet3D()
+        net = UNet3D(residual=True)
     elif args.arch == 'vnet':
         net = VNet(n_channels=cfg.general.in_channels, 
                    n_classes=cfg.general.num_classes)
