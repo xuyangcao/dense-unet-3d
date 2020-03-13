@@ -1,5 +1,5 @@
 import os
-os.environ["CUDA_VISIBLE_DEVICES"] = '3' 
+os.environ["CUDA_VISIBLE_DEVICES"] = '2' 
 import argparse
 import shutil
 import tqdm
@@ -48,6 +48,7 @@ def test(args, test_loader, net, save_result=True):
     hd_list = []
     hd95_list = []
     asd_list = []
+    vs_list = []
     filename_list = []
     with torch.no_grad():
         for sample in tqdm.tqdm(test_loader):
@@ -74,6 +75,7 @@ def test(args, test_loader, net, save_result=True):
             hd_list.append(metrics['hd'])
             hd95_list.append(metrics['hd95'])
             asd_list.append(metrics['asd'])
+            vs_list.append(metrics['vs'])
             filename_list.append(case_name)
 
 
@@ -98,8 +100,9 @@ def test(args, test_loader, net, save_result=True):
         df['hd'] = np.array(hd_list) 
         df['hd95'] = np.array(hd95_list) 
         df['asd'] = np.array(asd_list) 
+        df['volume_size'] = np.array(vs_list)
         print(df.describe())
-        df.to_csv(args.csv_file_name)
+        df.to_excel(args.csv_file_name)
 
 
 def main():
@@ -114,7 +117,7 @@ def main():
         file_name = 'checkpoint_result'
     else:
         raise(RuntimeError('Error in args.resume'))
-    csv_file_name = file_name + '.csv'
+    csv_file_name = file_name + '.xlsx'
 
     if args.save is not None:
         save_path = os.path.join(args.save, file_name) 
