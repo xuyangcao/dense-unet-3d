@@ -42,16 +42,19 @@ class _DenseBlock(nn.ModuleDict):
         super(_DenseBlock, self).__init__()
         if output_stride == 2:
             #dilations = [1, 1, 1, 1, 1, 1]
-            #dilations = [1, 1, 1, 6, 12, 18]
-            dilations = [1, 2, 5, 1, 2, 5]
+            #dilations = [1, 2, 3, 5, 7, 9]
+            #dilations = [1, 2, 5, 1, 2, 5]
+            dilations = [1, 2, 3, 1, 2, 3]
         elif output_stride == 4:
             #dilations = [1, 1, 1, 1, 1, 1]
-            #dilations = [1, 1, 1, 3, 6, 9]
-            dilations = [1, 2, 5, 1, 2, 5]
+            #dilations = [1, 3, 5, 1, 3, 5]
+            #dilations = [1, 2, 5, 1, 2, 5]
+            dilations = [1, 2, 3, 1, 2, 3]
         else:
             #dilations = [1, 1, 1, 1, 1, 1]
             #dilations = [1, 1, 1, 2, 3, 5]
-            dilations = [1, 2, 5, 1, 2, 5]
+            #dilations = [1, 2, 5, 1, 2, 5]
+            dilations = [1, 2, 3, 1, 2, 3]
 
 
         if use_dilation:

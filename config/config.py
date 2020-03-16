@@ -17,8 +17,8 @@ cfg.general.crop_size = [128, 64, 128]
 cfg.training = {}
 # optimizer
 cfg.training.opt = 'adam'
-cfg.training.weight_decay = 1e-5
-cfg.training.lr = 1e-4
+cfg.training.weight_decay = 1e-4
+cfg.training.lr = 1e-3
 cfg.training.drop_rate = 0.0
 # random flag 
 cfg.training.deterministic = True 
