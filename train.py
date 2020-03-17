@@ -47,9 +47,9 @@ def get_config():
 
     # frequently changed params 
     parser.add_argument('--fold', type=str, default='0')
-    parser.add_argument('--arch', type=str, default='denseunet', choices=('denseunet', 'vnet', 'unet3d'))
-    parser.add_argument('--log_dir', type=str, default='./log/0305_archs')
-    parser.add_argument('--save', default='./work/0305_archs/dunet_123_fold_0')
+    parser.add_argument('--arch', type=str, default='denseunet', choices=('denseunet', 'vnet', 'unet3d', 'resunet3d'))
+    parser.add_argument('--log_dir', type=str, default='./log/losses')
+    parser.add_argument('--save', default='./work/losses/focal_dice')
 
     args = parser.parse_args()
     cfg = load_config(args.input)
@@ -112,7 +112,8 @@ def main():
                         num_classes=cfg.general.num_classes,
                         drop_rate=cfg.training.drop_rate)
     elif args.arch == 'unet3d':
-        #net = UNet3D()
+        net = UNet3D(residual=False)
+    elif args.arch == 'resunet3d':
         net = UNet3D(residual=True)
     elif args.arch == 'vnet':
         net = VNet(n_channels=cfg.general.in_channels, 

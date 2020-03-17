@@ -10,11 +10,13 @@ import numpy as np
 import pandas as pd
 
 import torch
+import torch.nn as nn
 from torchvision import transforms
 from torch.utils.data import DataLoader
 
 from models.atrous_denseunet import ADenseUnet
 from models.vnet_o import VNet
+from unet import UNet3D
 from dataset.abus import ABUS
 from dataset.augment import ToTensor
 from utils.utils import load_config, get_metrics
@@ -31,7 +33,7 @@ def get_args():
 
     # frequently changed params
     parser.add_argument('--fold', type=str, default='1')
-    parser.add_argument('--arch', type=str, default='denseunet', choices=('denseunet', 'vnet'))
+    parser.add_argument('--arch', type=str, default='denseunet', choices=('denseunet', 'vnet', 'unet3d', 'resunet3d'))
     parser.add_argument('--resume', type=str)
     parser.add_argument('--save', type=str)
 
@@ -48,6 +50,8 @@ def test(args, test_loader, net, save_result=True):
     hd_list = []
     hd95_list = []
     asd_list = []
+    precision_list = []
+    recall_list = []
     vs_list = []
     filename_list = []
     with torch.no_grad():
@@ -75,6 +79,8 @@ def test(args, test_loader, net, save_result=True):
             hd_list.append(metrics['hd'])
             hd95_list.append(metrics['hd95'])
             asd_list.append(metrics['asd'])
+            precision_list.append(metrics['precision'])
+            recall_list.append(metrics['recall'])
             vs_list.append(metrics['vs'])
             filename_list.append(case_name)
 
@@ -94,14 +100,16 @@ def test(args, test_loader, net, save_result=True):
                 sitk.WriteImage(img, save_name + '/' + "pred.nii.gz")
 
         df = pd.DataFrame()
-        df['name'] = filename_list 
+        df['filename'] = filename_list 
         df['dsc'] = np.array(dsc_list)
         df['jc'] = np.array(jc_list) 
-        df['hd'] = np.array(hd_list) 
         df['hd95'] = np.array(hd95_list) 
-        df['asd'] = np.array(asd_list) 
-        df['volume_size'] = np.array(vs_list)
+        df['precision'] = np.array(precision_list)
+        df['recall'] = np.array(recall_list)
         print(df.describe())
+        df['hd'] = np.array(hd_list) 
+        df['asd'] = np.array(asd_list) 
+        df['volume(mm^3)'] = np.array(vs_list)
         df.to_excel(args.csv_file_name)
 
 
@@ -142,13 +150,18 @@ def main():
         net = ADenseUnet(in_channels=cfg.general.in_channels, 
                         num_classes=cfg.general.num_classes,
                         drop_rate=cfg.training.drop_rate)
+    elif args.arch == 'unet3d':
+        net = UNet3D(residual=False)
+    elif args.arch == 'resunet3d':
+        net = UNet3D(residual=True)
     elif args.arch == 'vnet':
         net = VNet(n_channels=cfg.general.in_channels, 
                    n_classes=cfg.general.num_classes)
     else:
         raise(RuntimeError('No module named {}'.format(args.arch)))
     net = net.cuda()
-    #model = nn.parallel.DataParallel(model, list(range(args.ngpu)))
+    if args.arch == 'unet3d' or args.arch == 'resunet3d':
+        net = nn.parallel.DataParallel(net, list(range(args.ngpu)))
 
 
     # --- resume trained weights ---

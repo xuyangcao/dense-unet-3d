@@ -43,18 +43,21 @@ def get_metrics(pred, gt, voxelspacing=(0.5, 0.5, 0.5)):
     dsc = metric.binary.dc(pred, gt)
     jc = metric.binary.jc(pred, gt)
     vs = np.sum(gt) * voxelspacing[0] * voxelspacing[1] * voxelspacing[2]
+    precision = metric.binary.precision(pred, gt)
+    recall = metric.binary.recall(pred, gt)
 
     if np.sum(pred) == 0:
         print('=> prediction is 0s! ')
-        hd = 10.
-        hd95 = 10.
+        hd = 32.
+        hd95 = 32.
         asd = 10.
     else:
         hd = metric.binary.hd(pred, gt, voxelspacing=voxelspacing)
         hd95 = metric.binary.hd95(pred, gt, voxelspacing=voxelspacing)
         asd = metric.binary.asd(pred, gt, voxelspacing=voxelspacing)
 
-    metrics = {'dsc': dsc, 'jc': jc, 'hd': hd, 'hd95': hd95, 'asd': asd, 'vs': vs} 
+    metrics = {'dsc': dsc, 'jc': jc, 'hd': hd, 'hd95': hd95, 'asd': asd, 
+                'precision':precision, 'recall':recall, 'vs': vs} 
     return metrics 
 
 def get_dice(pred, gt):
