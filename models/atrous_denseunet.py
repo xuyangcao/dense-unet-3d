@@ -51,10 +51,10 @@ class _DenseBlock(nn.ModuleDict):
             #dilations = [1, 2, 5, 1, 2, 5]
             dilations = [1, 2, 3, 1, 2, 3]
         else:
-            #dilations = [1, 1, 1, 1, 1, 1]
+            dilations = [1, 1, 1, 1, 1, 1]
             #dilations = [1, 1, 1, 2, 3, 5]
             #dilations = [1, 2, 5, 1, 2, 5]
-            dilations = [1, 2, 3, 1, 2, 3]
+            #dilations = [1, 2, 3, 1, 2, 3]
 
 
         if use_dilation:
@@ -139,6 +139,30 @@ class UpSampleBlock(nn.Module):
 
         return x
 
+class OutputBlock(nn.Module):
+    def __init__(self, inChans):
+        super(OutputBlock, self).__init__()
+        self.conv1 = nn.Conv3d(inChans, 2, kernel_size=5, padding=2)
+        self.bn1 = nn.BatchNorm3d(2)
+        self.relu1 = nn.ReLU(inplace=True) 
+        self.conv2 = nn.Conv3d(2, 2, kernel_size=1)
+
+        # weight init
+        for m in self.modules():
+            if isinstance(m, nn.Conv3d):
+                nn.init.kaiming_normal_(m.weight)
+                nn.init.constant_(m.bias, 0)
+            elif isinstance(m, nn.BatchNorm3d):
+                nn.init.constant_(m.weight, 1)
+                nn.init.constant_(m.bias, 0)
+
+    def forward(self, x):
+        out = self.relu1(self.bn1(self.conv1(x)))
+        out = self.conv2(out)
+
+        return out
+
+
 class AtrousDenseNet(nn.Module):
     """
     DenseNet 3D with atrous convolution
@@ -153,7 +177,7 @@ class AtrousDenseNet(nn.Module):
     dilations (list of 6 ints): atrous rate in atrous convolution 
     """
 
-    def __init__(self, in_planes=1, out_planes=2, growth_rate=6, block_config=(6, 6, 6, 6), num_init_features=16, bn_size=2, drop_rate=0., use_dilation=True):
+    def __init__(self, in_planes=1, out_planes=2, growth_rate=6, block_config=(6, 6, 6, 6), num_init_features=16, bn_size=4, drop_rate=0., use_dilation=True):
         super(AtrousDenseNet, self).__init__()
 
         # Input convolution 
@@ -234,7 +258,8 @@ class ADenseUnet(nn.Module):
             self.up_2 = UpSampleBlock(64, 32)
             self.up_3 = UpSampleBlock(69, 64)
 
-        self.output_block = nn.Conv3d(16, num_classes, kernel_size=1, stride=1, padding=0, bias=False)
+        #self.output_block = nn.Conv3d(16, num_classes, kernel_size=1, stride=1, padding=0, bias=False)
+        self.output_block = OutputBlock(16) 
 
     def forward(self, x):
         #print('x.shape', x.shape)

@@ -30,7 +30,7 @@ from models.vnet_o import VNet
 from unet import UNet3D
 from dataset.abus import ABUS, RandomCrop 
 from dataset.augment import RandomFlip, ElasticTransform, ToTensor 
-from utils.losses import dice_loss
+from utils.losses import dice_loss, focal_dice_loss, boundary_loss, compute_sdf, compute_sdf1_1, compute_bounds
 from utils.utils import save_checkpoint, get_dice, load_config
 
 def get_config():
@@ -44,12 +44,16 @@ def get_config():
     # epoch
     parser.add_argument('--start_epoch', type=int, default=1)
     parser.add_argument('--n_epochs', type=int, default=300)
-
-    # frequently changed params 
     parser.add_argument('--fold', type=str, default='0')
     parser.add_argument('--arch', type=str, default='denseunet', choices=('denseunet', 'vnet', 'unet3d', 'resunet3d'))
+
+    # frequently changed params 
     parser.add_argument('--log_dir', type=str, default='./log/losses')
-    parser.add_argument('--save', default='./work/losses/focal_dice')
+    parser.add_argument('--save', default='./work/losses/boundary_loss')
+    parser.add_argument('--loss', type=str, default='dice', choices=('dice', 'focal_dice', 'boundary', 'dist'))
+    parser.add_argument('--gamma', type=int, default=0.5)
+    parser.add_argument('--boundary_method', type=str, default='rump', choices=('rump', 'stable'))
+    parser.add_argument('--boundary_alpha', type=float, default=0.001)
 
     args = parser.parse_args()
     cfg = load_config(args.input)
@@ -174,6 +178,8 @@ def main():
 
     loss_fn = {}
     loss_fn['dice_loss'] = dice_loss 
+    loss_fn['focal_dice_loss'] = focal_dice_loss
+    loss_fn['boundary'] = boundary_loss
 
 
     #####################
@@ -284,7 +290,7 @@ def train(args, cfg, epoch, net, train_loader, optimizer, loss_fn, writer):
     batch_size = args.ngpu * args.batch_size
 
     loss_list = []
-    dice_loss_list = []
+    #dice_loss_list = []
     num_processed = 0
     num_train = len(train_loader.dataset)
     for batch_idx, sample in enumerate(train_loader):
@@ -295,11 +301,45 @@ def train(args, cfg, epoch, net, train_loader, optimizer, loss_fn, writer):
         outputs = net(data)
         outputs_soft = F.softmax(outputs, dim=1)
 
-        dice_loss = loss_fn['dice_loss'](outputs_soft[:, 1, ...], label == 1)
-        loss = dice_loss
+        if args.loss == 'dice':
+            loss_dice = loss_fn['dice_loss'](outputs_soft[:, 1, ...], label == 1)
+            loss = loss_dice
+        elif args.loss == 'focal_dice':
+            loss_focal_dice = loss_fn['focal_dice_loss'](outputs_soft[:, 1, ...], label==1, gamma=args.gamma)
+            loss = loss_focal_dice
+        elif args.loss == 'boundary':
+            loss_dice = loss_fn['dice_loss'](outputs_soft[:, 1, ...], label == 1)
+            with torch.no_grad():
+                gt_sdf_npy = compute_sdf(label.cpu().numpy(), outputs_soft.shape)
+                gt_sdf = torch.from_numpy(gt_sdf_npy).float().cuda()
+            loss_boundary = loss_fn['boundary'](outputs_soft, gt_sdf)
+            if args.boundary_method == 'rump':
+                alpha = 0.005 * epoch
+                if alpha >= 0.9:
+                    alpha = 0.9
+                loss = (1 - alpha) * loss_dice + alpha * loss_boundary
+            else:
+                loss = loss_dice + args.boundary_alpha * loss_boundary
+        elif args.loss == 'dist':
+            loss_dice = loss_fn['dice_loss'](outputs_soft[:, 1, ...], label == 1)
+            with torch.no_grad():
+                gt_sdf_npy = compute_bounds(label.cpu().numpy(), 5, 1) 
+                gt_sdf = torch.from_numpy(gt_sdf_npy).float().cuda()
+            loss_boundary = loss_fn['boundary'](outputs_soft, gt_sdf)
+            if args.boundary_method == 'rump':
+                alpha = 0.005 * epoch
+                if alpha >= 0.9:
+                    alpha = 0.9
+                loss = (1 - alpha) * loss_dice + alpha * loss_boundary
+            else:
+                loss = loss_dice + args.boundary_alpha * loss_boundary
+
+
+        else:
+            raise(RuntimeError('no loss named {}'.format(args.loss)))
 
         # save losses to list
-        dice_loss_list.append(dice_loss.item())
+        #dice_loss_list.append(dice_loss.item())
         loss_list.append(loss.item())
 
         optimizer.zero_grad()
@@ -346,7 +386,7 @@ def train(args, cfg, epoch, net, train_loader, optimizer, loss_fn, writer):
                 fig.clear()
 
     # show scalars on tensorboard
-    writer.add_scalar('train/dice_loss', float(np.mean(dice_loss_list)), epoch)
+    #writer.add_scalar('train/dice_loss', float(np.mean(dice_loss_list)), epoch)
     writer.add_scalar('train/total_loss', float(np.mean(loss_list)), epoch)
 
 

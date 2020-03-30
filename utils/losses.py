@@ -91,6 +91,18 @@ def dice_loss(score, target):
     loss = 1 - loss
     return loss
 
+def focal_dice_loss(score, target, gamma=2.):
+    target = target.float()
+    smooth = 1e-6
+    intersect = torch.sum(score * target)
+    y_sum = torch.sum(target * target)
+    z_sum = torch.sum(score * score)
+    dice = (2 * intersect + smooth) / (z_sum + y_sum + smooth)
+
+    loss = - (1 - dice) ** gamma * torch.log(dice + smooth) 
+
+    return loss
+
 def dice_loss1(score, target):
     # non-square
     target = target.float()
@@ -229,6 +241,20 @@ def compute_sdf(img_gt, out_shape):
     return gt_sdf
 
 
+def compute_bounds(target, out_shape, foreground=-5, background=1):
+    gt_sdf = np.zeros(out_shape)
+    if target.sum() == 0:
+        return gt_sdf 
+    else:
+        bounds = target.copy()
+        bounds = bounds.astype(np.float32)
+        bounds[bounds != 0] = foreground 
+        bounds[bounds == 0] = background 
+
+        gt_sdf[0] = bounds
+        gt_sdf[1] = bounds
+
+        return gt_sdf 
 
 def compute_sdf01(segmentation):
     """
