@@ -32,17 +32,18 @@ def get_args():
     #parser.add_argument('-e', '--evaluate', action='store_true', default=False)
 
     # frequently changed params
-    parser.add_argument('--fold', type=str, default='1')
+    parser.add_argument('--fold', type=str, default='0')
     parser.add_argument('--arch', type=str, default='denseunet', choices=('denseunet', 'vnet', 'unet3d', 'resunet3d'))
+    parser.add_argument('--save', default=None, type=str) 
     parser.add_argument('--resume', type=str)
-    parser.add_argument('--save', type=str)
+    parser.add_argument('--save_image', action='store_true')
 
     args = parser.parse_args()
     cfg = load_config(args.input)
     return cfg, args
 
 
-def test(args, test_loader, net, save_result=True):
+def test(args, test_loader, net):
     net.eval()
 
     dsc_list = []
@@ -85,7 +86,7 @@ def test(args, test_loader, net, save_result=True):
             filename_list.append(case_name)
 
 
-            if save_result:
+            if args.save_image:
                 save_name = os.path.join(args.save_path, case_name[0][:-4])
                 if not os.path.exists(save_name):
                     os.makedirs(save_name)
@@ -135,7 +136,10 @@ def main():
         csv_path = os.path.dirname(args.resume)
     args.save_path = save_path
     args.csv_file_name = os.path.join(csv_path, csv_file_name) 
-    print('=> saving images in :', args.save_path)
+    if args.save_image:
+        print('=> saving images in :', args.save_path)
+    else:
+        print('=> we did not save segmentation results!')
     print('=> saving csv in :', args.csv_file_name)
 
 
