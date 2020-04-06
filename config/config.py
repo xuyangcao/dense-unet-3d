@@ -19,7 +19,7 @@ cfg.training = {}
 cfg.training.opt = 'adam'
 cfg.training.weight_decay = 1e-4
 cfg.training.lr = 1e-3
-cfg.training.drop_rate = 0.0
+cfg.training.drop_rate = 0.1
 # random flag 
 cfg.training.deterministic = True 
 cfg.training.seed = 2020

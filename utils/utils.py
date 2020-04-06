@@ -7,6 +7,12 @@ import importlib
 from medpy import metric
 import numpy as np
 
+def gaussian_noise(x, std=0.03):
+    noise = torch.zeros(x.shape)
+    noise.data.normal_(0, std)
+    noise = noise.cuda()
+    return x + noise
+
 def save_checkpoint(state, is_best, path, prefix, filename='checkpoint.pth.tar'):
     prefix_save = os.path.join(path, prefix)
     name = prefix_save + '_' + filename
