@@ -53,10 +53,10 @@ def get_config():
     parser.add_argument('--save', default='./work/losses/certainty_loss_g2')
 
     parser.add_argument('--loss', type=str, default='dice', choices=('dice', 'focal_dice', 'boundary', 'dist', 'certainty'))
-    parser.add_argument('--gamma', type=int, default=2)
     parser.add_argument('--boundary_method', type=str, default='rump', choices=('rump', 'stable'))
     parser.add_argument('--boundary_alpha', type=float, default=0.001)
-    parser.add_argument('--uncertain_weight', type=float, default=0.1)
+    parser.add_argument('--gamma', type=float, default=2)
+    parser.add_argument('--uncertain_weight', type=float, default=0.01)
 
     parser.add_argument('--is_uncertain', action='store_true') 
 

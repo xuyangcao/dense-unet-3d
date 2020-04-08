@@ -26,12 +26,9 @@ class CertaintyLoss(nn.Module):
 
         logpt = F.log_softmax(input, dim=1)
         logpt = logpt.gather(1,target)
-        #print('logpt.shape: ', logpt.shape)
         logpt = logpt.view(-1)
         #pt = Variable(logpt.data.exp())
-        #print('uncertainty.shape: ', uncertainty.shape)
         uncertainty = uncertainty.view(-1)
-        #print('uncertainty.shape.after: ', uncertainty.shape)
         uncertainty = uncertainty.cuda()
 
         if self.alpha is not None:
