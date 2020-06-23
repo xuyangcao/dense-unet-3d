@@ -26,6 +26,8 @@ from tensorboardX import SummaryWriter
 from torchvision.utils import make_grid
 
 from models.atrous_denseunet import ADenseUnet
+from models.deeplabv3 import DeepLabV3_3D
+from models.segnet import SegNet
 #from models.vnet import VNet
 from models.vnet_o import VNet
 from unet import UNet3D
@@ -46,7 +48,7 @@ def get_config():
     parser.add_argument('--start_epoch', type=int, default=1)
     parser.add_argument('--n_epochs', type=int, default=300)
     parser.add_argument('--fold', type=str, default='0')
-    parser.add_argument('--arch', type=str, default='denseunet', choices=('denseunet', 'vnet', 'unet3d', 'resunet3d'))
+    parser.add_argument('--arch', type=str, default='denseunet', choices=('denseunet', 'vnet', 'unet3d', 'resunet3d', 'deeplabv3', 'segnet'))
 
     # frequently changed params 
     parser.add_argument('--log_dir', type=str, default='./log/losses')
@@ -59,6 +61,7 @@ def get_config():
     parser.add_argument('--uncertain_weight', type=float, default=0.01)
 
     parser.add_argument('--is_uncertain', action='store_true') 
+    parser.add_argument('--is_save_uncertain', action='store_true') 
 
     args = parser.parse_args()
     cfg = load_config(args.input)
@@ -127,6 +130,13 @@ def main():
     elif args.arch == 'vnet':
         net = VNet(n_channels=cfg.general.in_channels, 
                    n_classes=cfg.general.num_classes)
+    elif args.arch == 'deeplabv3': # doesn't work due to large dilation in aspp
+        net = DeepLabV3_3D(num_classes=cfg.general.num_classes,
+                           input_channels=cfg.general.in_channels,
+                           resnet='ResNet18_OS8')
+    elif args.arch == 'segnet':
+        net = SegNet(num_classes=cfg.general.num_classes,
+                     n_init_features=cfg.general.in_channels)
     else:
         raise(RuntimeError('No module named {}'.format(args.arch)))
 

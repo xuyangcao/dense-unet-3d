@@ -6,12 +6,16 @@ import torch
 from tensorboardX import SummaryWriter
 #from unet3d.model import UNet3D
 from unet import UNet3D
+#from deeplabv3 import DeepLabV3_3D
+from segnet import SegNet
 
 #net = VNet(n_channels=1, n_classes=2)
-net = ADenseUnet()
+#net = ADenseUnet()
 #net = UNet3D(residual=False)
 #net = UNet3D(residual=True)
 #net = net.cuda()
+#net = DeepLabV3_3D(num_classes=2, input_channels=1, resnet='ResNet18_OS8')
+net = SegNet(2, 1)
 print(net)
 n_params = sum([p.data.nelement() for p in net.parameters()])
 print('total parameters = {}'.format(n_params))
