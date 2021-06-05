@@ -1,5 +1,5 @@
 import os
-os.environ["CUDA_VISIBLE_DEVICES"] = '2' 
+os.environ["CUDA_VISIBLE_DEVICES"] = '0' 
 import argparse
 import shutil
 import tqdm
@@ -16,6 +16,7 @@ from torch.utils.data import DataLoader
 
 from models.atrous_denseunet import ADenseUnet
 from models.vnet_o import VNet
+from models.segnet import SegNet
 from unet import UNet3D
 from dataset.abus import ABUS
 from dataset.augment import ToTensor
@@ -33,7 +34,7 @@ def get_args():
 
     # frequently changed params
     parser.add_argument('--fold', type=str, default='0')
-    parser.add_argument('--arch', type=str, default='denseunet', choices=('denseunet', 'vnet', 'unet3d', 'resunet3d'))
+    parser.add_argument('--arch', type=str, default='denseunet', choices=('denseunet', 'vnet', 'unet3d', 'resunet3d', 'deeplabv3', 'segnet'))
     parser.add_argument('--save', default=None, type=str) 
     parser.add_argument('--resume', type=str)
     parser.add_argument('--save_image', action='store_true')
@@ -161,10 +162,13 @@ def main():
     elif args.arch == 'vnet':
         net = VNet(n_channels=cfg.general.in_channels, 
                    n_classes=cfg.general.num_classes)
+    elif args.arch == 'segnet':
+        net = SegNet(num_classes=cfg.general.num_classes,
+                     n_init_features=cfg.general.in_channels)
     else:
         raise(RuntimeError('No module named {}'.format(args.arch)))
     net = net.cuda()
-    if args.arch == 'unet3d' or args.arch == 'resunet3d':
+    if args.arch == 'unet3d' or args.arch == 'resunet3d' or args.arch == 'segnet':
         net = nn.parallel.DataParallel(net, list(range(args.ngpu)))
 
 

@@ -23,7 +23,7 @@ from torch.utils.data import DataLoader
 from tensorboardX import SummaryWriter
 from torchvision.utils import make_grid
 
-from models.atrous_denseunet import ADenseUnet
+from models.atrous_denseunet_1 import ADenseUnet
 #from models.vnet import VNet
 from models.vnet_o import VNet
 from unet import UNet3D
