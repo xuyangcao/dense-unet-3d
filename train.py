@@ -15,6 +15,7 @@ from mpl_toolkits.axes_grid1 import make_axes_locatable
 import torch
 import torch.nn as nn
 import torch.optim as optim
+from torch.autograd import Variable
 from torchvision import transforms
 import torch.nn.functional as F
 import torch.backends.cudnn as cudnn
@@ -29,8 +30,8 @@ from models.vnet_o import VNet
 from unet import UNet3D
 from dataset.abus import ABUS, RandomCrop 
 from dataset.augment import RandomFlip, ElasticTransform, ToTensor 
-from utils.losses import dice_loss, focal_dice_loss
-from utils.utils import save_checkpoint, get_dice, load_config
+from utils.losses import dice_loss, focal_dice_loss, boundary_loss, compute_sdf, compute_sdf1_1, compute_bounds, MaskMSELoss, CertaintyLoss
+from utils.utils import save_checkpoint, get_dice, load_config, gaussian_noise
 
 def get_config():
     parser = argparse.ArgumentParser()
@@ -49,9 +50,16 @@ def get_config():
 
     # frequently changed params 
     parser.add_argument('--log_dir', type=str, default='./log/losses')
-    parser.add_argument('--save', default='./work/losses/dice_first2_123')
-    parser.add_argument('--loss', type=str, default='dice', choices=('dice', 'focal_dice'))
-    parser.add_argument('--gamma', type=int, default=5)
+    parser.add_argument('--save', default='./work/losses/certainty_loss_g2')
+
+    parser.add_argument('--loss', type=str, default='dice', choices=('dice', 'focal_dice', 'boundary', 'dist', 'certainty'))
+    parser.add_argument('--boundary_method', type=str, default='rump', choices=('rump', 'stable'))
+    parser.add_argument('--boundary_alpha', type=float, default=0.001)
+    parser.add_argument('--gamma', type=float, default=2)
+    parser.add_argument('--uncertain_weight', type=float, default=0.01)
+
+    parser.add_argument('--is_uncertain', action='store_true') 
+    parser.add_argument('--is_save_uncertain', action='store_true') 
 
     args = parser.parse_args()
     cfg = load_config(args.input)
@@ -178,6 +186,9 @@ def main():
     loss_fn = {}
     loss_fn['dice_loss'] = dice_loss 
     loss_fn['focal_dice_loss'] = focal_dice_loss
+    loss_fn['boundary'] = boundary_loss
+    loss_fn['mask_mse'] = MaskMSELoss()
+    loss_fn['certainty'] = CertaintyLoss(gamma=args.gamma, alpha=None)
 
 
     #####################
@@ -268,7 +279,7 @@ def test(epoch, net, test_loader, writer):
         return np.mean(mean_dice)
 
 
-def train(args, cfg, epoch, net, train_loader, optimizer, loss_fn, writer):
+def train(args, cfg, epoch, net, train_loader, optimizer, loss_fn, writer, T=4):
     r"""
     training
 
@@ -299,12 +310,65 @@ def train(args, cfg, epoch, net, train_loader, optimizer, loss_fn, writer):
         outputs = net(data)
         outputs_soft = F.softmax(outputs, dim=1)
 
+        if args.is_uncertain:
+            with torch.no_grad():
+                out_hat_shape = (T+1,) + outputs_soft.shape
+                temp_out_shape = (1, ) + outputs_soft.shape
+                out_hat = Variable(torch.zeros(out_hat_shape).float().cuda(), requires_grad=False)
+                out_hat[0] = outputs_soft.view(temp_out_shape)
+                for t in range(T):
+                    data_aug = gaussian_noise(data)
+                    data_aug = Variable(data_aug.cuda())
+                    out_hat[t+1] = F.softmax(net(data_aug).detach(), dim=1).view(temp_out_shape)
+                epistemic = torch.mean(out_hat**2, 0) - torch.mean(out_hat, 0)**2
+                epistemic = (epistemic - epistemic.min()) / (epistemic.max() - epistemic.min())
+
+            #loss_mse = loss_fn['mask_mse'](outputs_soft, label, epistemic, th=0.15)
+            #print('outputs.shape: ', outputs.shape)
+            #print('label.shape: ', label.shape)
+            #print('epistemic.shape: ', epistemic.shape)
+            loss_uncertain = loss_fn['certainty'](outputs, label, epistemic[:, 1, ...].clone()) 
+
+
         if args.loss == 'dice':
-            loss = loss_fn['dice_loss'](outputs_soft[:, 1, ...], label == 1)
+            loss_dice = loss_fn['dice_loss'](outputs_soft[:, 1, ...], label == 1)
+            loss = loss_dice
         elif args.loss == 'focal_dice':
-            loss = loss_fn['focal_dice_loss'](outputs_soft[:, 1, ...], label == 1, gamma=args.gamma)
+            loss_focal_dice = loss_fn['focal_dice_loss'](outputs_soft[:, 1, ...], label==1, gamma=args.gamma)
+            loss = loss_focal_dice
+        elif args.loss == 'boundary':
+            loss_dice = loss_fn['dice_loss'](outputs_soft[:, 1, ...], label == 1)
+            with torch.no_grad():
+                gt_sdf_npy = compute_sdf(label.cpu().numpy(), outputs_soft.shape)
+                gt_sdf = torch.from_numpy(gt_sdf_npy).float().cuda()
+            loss_boundary = loss_fn['boundary'](outputs_soft, gt_sdf)
+            if args.boundary_method == 'rump':
+                alpha = 0.005 * epoch
+                if alpha >= 0.9:
+                    alpha = 0.9
+                loss = (1 - alpha) * loss_dice + alpha * loss_boundary
+            else:
+                loss = loss_dice + args.boundary_alpha * loss_boundary
+        elif args.loss == 'dist':
+            loss_dice = loss_fn['dice_loss'](outputs_soft[:, 1, ...], label == 1)
+            with torch.no_grad():
+                gt_sdf_npy = compute_bounds(label.cpu().numpy(), 5, 1) 
+                gt_sdf = torch.from_numpy(gt_sdf_npy).float().cuda()
+            loss_boundary = loss_fn['boundary'](outputs_soft, gt_sdf)
+            if args.boundary_method == 'rump':
+                alpha = 0.005 * epoch
+                if alpha >= 0.9:
+                    alpha = 0.9
+                loss = (1 - alpha) * loss_dice + alpha * loss_boundary
+            else:
+                loss = loss_dice + args.boundary_alpha * loss_boundary
+
+
         else:
             raise(RuntimeError('no loss named {}'.format(args.loss)))
+
+        if args.is_uncertain:
+            loss = loss + args.uncertain_weight * loss_uncertain 
 
         # save losses to list
         #dice_loss_list.append(dice_loss.item())
