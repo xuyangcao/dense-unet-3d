@@ -25,6 +25,8 @@ from tensorboardX import SummaryWriter
 from torchvision.utils import make_grid
 
 from models.atrous_denseunet import ADenseUnet
+from models.denseatt import DenseAtt
+from models.attd2unet import AttD2UNet
 #from models.vnet import VNet
 from models.vnet_o import VNet
 from unet import UNet3D
@@ -46,7 +48,7 @@ def get_config():
     parser.add_argument('--start_epoch', type=int, default=1)
     parser.add_argument('--n_epochs', type=int, default=300)
     parser.add_argument('--fold', type=str, default='0')
-    parser.add_argument('--arch', type=str, default='denseunet', choices=('denseunet', 'vnet', 'unet3d', 'resunet3d'))
+    parser.add_argument('--arch', type=str, default='attd2unet', choices=('denseunet', 'attd2unet','vnet', 'unet3d', 'resunet3d', 'denseatt'))
 
     # frequently changed params 
     parser.add_argument('--log_dir', type=str, default='./log/losses')
@@ -60,6 +62,7 @@ def get_config():
 
     parser.add_argument('--is_uncertain', action='store_true') 
     parser.add_argument('--is_save_uncertain', action='store_true') 
+    parser.add_argument('--T', type=int, default=2)
 
     args = parser.parse_args()
     cfg = load_config(args.input)
@@ -129,6 +132,10 @@ def main():
     elif args.arch == 'vnet':
         net = VNet(n_channels=cfg.general.in_channels, 
                    n_classes=cfg.general.num_classes)
+    elif args.arch == 'denseatt':
+        net = DenseAtt()
+    elif args.arch == 'attd2unet':
+        net = AttD2UNet()
     else:
         raise(RuntimeError('No module named {}'.format(args.arch)))
 
@@ -210,7 +217,7 @@ def main():
         writer.add_scalar('train/lr', lr, epoch)
 
         # train and evaluate 
-        train(args, cfg, epoch, net, train_loader, optimizer, loss_fn, writer)
+        train(args, cfg, epoch, net, train_loader, optimizer, loss_fn, writer, T=args.T-1)
         if epoch == 1 or epoch % 10 == 0:
             dice = test(epoch, net, test_loader, writer)
 

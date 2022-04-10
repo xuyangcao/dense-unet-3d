@@ -1,5 +1,4 @@
 import os
-os.environ["CUDA_VISIBLE_DEVICES"] = '0' 
 import argparse
 import shutil
 import tqdm
@@ -28,6 +27,7 @@ def get_args():
     # path
     parser.add_argument('--root_path', type=str, default='/data/xuyangcao/code/data/roi_3d/abus_shift')
     # gpu
+    parser.add_argument('--gpu', type=str, default='1')
     parser.add_argument('--ngpu', type=int, default=1)
     # evaluate
     #parser.add_argument('-e', '--evaluate', action='store_true', default=False)
@@ -119,6 +119,7 @@ def main():
 
     # --- init args ---
     cfg, args = get_args()
+    os.environ["CUDA_VISIBLE_DEVICES"] = args.gpu
     
     # --- saving path ---
     if 'best' in args.resume:
